@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Farmácia</string>
+    <string name="title_activity_main">Farmácia</string>
+    <string name="package_name">mz.appmarket.farmacia</string>
+    <string name="custom_url_scheme">mz.appmarket.farmacia</string>
+</resources>
