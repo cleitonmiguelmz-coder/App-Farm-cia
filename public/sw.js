@@ -19,6 +19,10 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) {
     return;
   }
+  // Vídeo e pedidos parciais (Range) ficam com o browser; no telemóvel o SW estraga a reprodução.
+  if (req.headers.has("range") || req.destination === "video" || req.destination === "audio") {
+    return;
+  }
 
   event.respondWith(
     fetch(req)

@@ -40,9 +40,18 @@ export default function RootLayout({
       lang="pt"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* Apanha o convite de instalação do Android antes de a app arrancar */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              'window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__installEvent=e;window.dispatchEvent(new Event("install-ready"))});',
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">
-        <CartProvider>{children}</CartProvider>
         <InstallPrompt />
+        <CartProvider>{children}</CartProvider>
       </body>
     </html>
   );

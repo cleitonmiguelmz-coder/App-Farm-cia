@@ -63,7 +63,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch {
-      localStorage.removeItem("farmacia-cart");
+      try {
+        localStorage.removeItem("farmacia-cart");
+      } catch {}
     } finally {
       setReady(true);
     }
@@ -71,7 +73,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (ready) {
-      localStorage.setItem("farmacia-cart", JSON.stringify(items));
+      try {
+        localStorage.setItem("farmacia-cart", JSON.stringify(items));
+      } catch {}
     }
   }, [items, ready]);
 

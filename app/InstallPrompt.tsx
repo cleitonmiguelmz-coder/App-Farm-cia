@@ -10,10 +10,18 @@ type InstallEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
+declare global {
+  interface Window {
+    // Guardado pelo script do layout, que corre antes de a app arrancar.
+    __installEvent?: InstallEvent;
+  }
+}
+
 const DISMISS_KEY = "farmacia-install-dismissed";
 const DISMISS_MS = 7 * 24 * 60 * 60 * 1000;
+const MANUAL_AFTER_MS = 4000;
 
-type Env = "ios" | "web" | "hidden";
+type Env = "ios" | "android" | "web" | "hidden";
 
 function getEnv(): Env {
   if (Capacitor.isNativePlatform()) return "hidden";
@@ -27,11 +35,24 @@ function getEnv(): Env {
   const isIos =
     /iPhone|iPad|iPod/.test(ua) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (isIos) return "ios";
 
-  return isIos ? "ios" : "web";
+  return /Android/.test(ua) ? "android" : "web";
 }
 
-const subscribe = () => () => {};
+const noopSubscribe = () => () => {};
+
+function subscribeInstall(onChange: () => void) {
+  window.addEventListener("install-ready", onChange);
+  return () => window.removeEventListener("install-ready", onChange);
+}
+
+const getInstallEvent = () => window.__installEvent ?? null;
+
+function setInstallEvent(event: InstallEvent | undefined) {
+  window.__installEvent = event;
+  window.dispatchEvent(new Event("install-ready"));
+}
 
 function wasDismissed(): boolean {
   try {
@@ -43,9 +64,14 @@ function wasDismissed(): boolean {
 }
 
 export default function InstallPrompt() {
-  const env = useSyncExternalStore(subscribe, getEnv, () => "hidden" as Env);
+  const env = useSyncExternalStore(noopSubscribe, getEnv, () => "hidden" as Env);
+  const installEvent = useSyncExternalStore(
+    subscribeInstall,
+    getInstallEvent,
+    () => null
+  );
   const [dismissed, setDismissed] = useState(wasDismissed);
-  const [installEvent, setInstallEvent] = useState<InstallEvent | null>(null);
+  const [waited, setWaited] = useState(false);
 
   useEffect(() => {
     if (Capacitor.isNativePlatform()) return;
@@ -54,15 +80,18 @@ export default function InstallPrompt() {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
 
+    // Reserva: o script do layout já costuma ter guardado o evento.
     const onPrompt = (event: Event) => {
       event.preventDefault();
       setInstallEvent(event as InstallEvent);
     };
-    const onInstalled = () => setInstallEvent(null);
+    const onInstalled = () => setInstallEvent(undefined);
+    const timer = setTimeout(() => setWaited(true), MANUAL_AFTER_MS);
 
     window.addEventListener("beforeinstallprompt", onPrompt);
     window.addEventListener("appinstalled", onInstalled);
     return () => {
+      clearTimeout(timer);
       window.removeEventListener("beforeinstallprompt", onPrompt);
       window.removeEventListener("appinstalled", onInstalled);
     };
@@ -79,30 +108,36 @@ export default function InstallPrompt() {
     if (!installEvent) return;
     await installEvent.prompt();
     await installEvent.userChoice;
-    setInstallEvent(null);
+    setInstallEvent(undefined);
   }
 
   if (dismissed || env === "hidden") return null;
   if (env === "web" && !installEvent) return null;
+  // Android sem o evento do Chrome: passados uns segundos mostra o caminho manual.
+  if (env === "android" && !installEvent && !waited) return null;
+
+  const manual = env === "android" && !installEvent;
 
   return (
     <div
       role="region"
       aria-label="Instalar a app"
-      className="fixed inset-x-0 bottom-0 z-50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+      className="border-b border-[#CFE3D6] bg-[#EEF7F1]"
     >
-      <div className="mx-auto flex max-w-md items-start gap-3 rounded-xl border border-[#DDE5DE] bg-white p-4 shadow-[0_8px_30px_rgba(18,53,37,0.18)]">
-        <LogoMark className="h-11 w-11 shrink-0" />
+      <div className="mx-auto flex max-w-[1440px] items-start gap-3 px-4 py-3 sm:px-6 lg:px-10">
+        <LogoMark className="h-10 w-10 shrink-0" />
 
         <div className="min-w-0 flex-1">
           <p className="text-sm font-extrabold text-[#193629]">
             {env === "ios"
               ? `Instale a ${BRAND.name} no iPhone`
-              : `Instale a ${BRAND.name} no telemóvel`}
+              : env === "web"
+                ? `Instale a ${BRAND.name}`
+                : `Instale a ${BRAND.name} no telemóvel`}
           </p>
 
           {env === "ios" ? (
-            <p className="mt-1 text-xs leading-5 text-[#5E6B62]">
+            <p className="mt-0.5 text-xs leading-5 text-[#5E6B62]">
               Toque em{" "}
               <svg
                 viewBox="0 0 24 24"
@@ -119,32 +154,39 @@ export default function InstallPrompt() {
               <strong>Partilhar</strong> e depois em{" "}
               <strong>Adicionar ao ecrã principal</strong>.
             </p>
+          ) : manual ? (
+            <p className="mt-0.5 text-xs leading-5 text-[#5E6B62]">
+              Toque no menu <strong>⋮</strong> do Chrome e depois em{" "}
+              <strong>Instalar app</strong> ou{" "}
+              <strong>Adicionar ao ecrã principal</strong>. Se abriu este link
+              dentro do WhatsApp ou do Instagram, abra-o primeiro no Chrome.
+            </p>
           ) : (
-            <p className="mt-1 text-xs leading-5 text-[#5E6B62]">
+            <p className="mt-0.5 text-xs leading-5 text-[#5E6B62]">
               Abre mais depressa e fica no ecrã principal, como qualquer outra
               app.
             </p>
           )}
 
-          <div className="mt-3 flex items-center gap-2">
-            {env === "web" && (
-              <button
-                type="button"
-                onClick={install}
-                className="bg-[#087F5B] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#066B4C]"
-              >
-                Instalar
-              </button>
-            )}
+          {installEvent && (
             <button
               type="button"
-              onClick={dismiss}
-              className="px-3 py-2 text-xs font-semibold text-[#68766D] hover:text-[#193629]"
+              onClick={install}
+              className="mt-2 bg-[#087F5B] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#066B4C]"
             >
-              {env === "ios" ? "Fechar" : "Agora não"}
+              Instalar
             </button>
-          </div>
+          )}
         </div>
+
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label="Fechar"
+          className="-mr-1 flex h-9 w-9 shrink-0 items-center justify-center text-lg text-[#68766D] hover:text-[#193629]"
+        >
+          ✕
+        </button>
       </div>
     </div>
   );

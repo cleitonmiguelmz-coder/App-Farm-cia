@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
   // cacheComponents e partialPrefetching foram retirados: não funcionam com output: "export".
   // O otimizador de imagens precisa de servidor; na app as imagens vão como estão.
   images: { unoptimized: true },
+  // Só afecta `npm run dev`: deixa abrir o site no telemóvel pelo IP do PC (ex.: 192.168.1.20:3000).
+  allowedDevOrigins: ["192.168.*.*", "10.*.*.*"],
   experimental: {
     agentFeedback: true,
   },
